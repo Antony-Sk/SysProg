@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 struct coro;
+
 typedef int (*coro_f)(void *);
 
 /** Make current context scheduler. */
@@ -45,3 +46,10 @@ coro_delete(struct coro *c);
 /** Switch to another not finished coroutine. */
 void
 coro_yield(void);
+
+struct timespec *
+coro_get_last_mt(struct coro *c);
+
+int *
+coro_get_work_time(struct coro *c);
+
