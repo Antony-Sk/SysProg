@@ -27,9 +27,6 @@ struct coro {
     long long switch_count;
     /** Links in the coroutine list, used by scheduler. */
     struct coro *next, *prev;
-
-    struct timespec last_mt;
-    int work_time;
 };
 
 /**
@@ -246,14 +243,4 @@ coro_new(coro_f func, void *func_arg) {
     /* Now scheduler can work with that coroutine. */
     coro_list_add(c);
     return c;
-}
-
-struct timespec *
-coro_get_last_mt(struct coro *c) {
-    return &c->last_mt;
-}
-
-int *
-coro_get_work_time(struct coro *c) {
-    return &c->work_time;
 }
