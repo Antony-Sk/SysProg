@@ -74,19 +74,32 @@ sort(int *array, int size, float target_lat, int64_t *work_time, struct timespec
     merge(array, first, size / 2, second, size - size / 2, target_lat, work_time, last_mt);
 }
 
+struct coro_input {
+    struct VectorInt** arrays;
+    int* iterator;
+    int arrays_num;
+};
+
 /**
  * Coroutine body. This code is executed by all the coroutines. Here you
  * implement your solution, sort each individual file.
  */
 static int
 coroutine_func_f(void *context) {
-    struct VectorInt *vector = (struct VectorInt *) context;
-    clock_gettime(CLOCK_MONOTONIC, &vector->last_mt);
-    sort(vector->storage_, vector->size_, vector->tar_lat, &vector->work_time, &vector->last_mt);
+    struct coro *this = coro_this();
+    clock_gettime(CLOCK_MONOTONIC, coro_last_mt(this));
+    struct coro_input* input = (struct coro_input*)context;
+    int it = __atomic_fetch_add(input->iterator, 1, __ATOMIC_SEQ_CST);
+    while (it < input->arrays_num) {
+        struct VectorInt *vector = (struct VectorInt *) input->arrays[it];
+        *coro_target_lat(this) = vector->storage_[vector->size_ - 2] / vector->storage_[vector->size_ - 1];
+        vector->size_ -= 2;
+        sort(vector->storage_, vector->size_, *coro_target_lat(this), coro_work_time(this), coro_last_mt(this));
+    }
     struct timespec mt;
     clock_gettime(CLOCK_MONOTONIC, &mt);
-    vector->work_time += (1000000000LL + mt.tv_nsec - vector->last_mt.tv_nsec) % 1000000000LL +
-                         1000000000LL * (mt.tv_sec - vector->last_mt.tv_sec);
+    *coro_work_time(this) += (1000000000LL + mt.tv_nsec - coro_last_mt(this)->tv_nsec) % 1000000000LL +
+                             1000000000LL * (mt.tv_sec - coro_last_mt(this)->tv_sec);
     return 0;
 }
 
@@ -95,23 +108,26 @@ main(int argc, char **argv) {
     struct timespec startTime;
     clock_gettime(CLOCK_MONOTONIC, &startTime);
 
-    int number_of_files = argc - 2; // -3 TODO bonus
+    int number_of_files = argc - 3; // -3 TODO bonus
     int target_latency = strtol(argv[1], NULL, 10);
-    int number_of_coroutines = number_of_files; //atoi(argv[2]);
-
+    int number_of_coroutines = strtol(argv[2], NULL, 10);
 
     /* Initialize our coroutine global cooperative scheduler. */
     coro_sched_init();
     /* Start several coroutines. */
     struct VectorInt *arrays = (struct VectorInt *) malloc(sizeof(struct VectorInt) * number_of_files);
     int overallSize = 0;
+    struct coro_input input;
+    input.arrays = &arrays;
+    input.arrays_num = number_of_files;
+    input.iterator = 0;
     for (int i = 0; i < number_of_files; ++i) {
         /*
          * The coroutines can take any 'void *' interpretation of which
          * depends on what you want. Here as an example I give them
          * some names.
          */
-        char *name = argv[i + 2]; // TODO: bonus will shift this index
+        char *name = argv[i + 3]; // TODO: bonus will shift this index
         FILE *file = fopen(name, "r");
         while (1) {
             int elem;
@@ -126,14 +142,17 @@ main(int argc, char **argv) {
          * I have to copy the name. Otherwise all the coroutines would
          * have the same name when they finally start.
          */
-        arrays[i].tar_lat = (float) target_latency / (float) number_of_coroutines;
-        coro_new(coroutine_func_f, &(arrays[i]));
+        push_back(&arrays[i], target_latency);
+        push_back(&arrays[i], number_of_coroutines);
+    }
+    for (int i = 0; i < number_of_coroutines; i++) {
+        coro_new(coroutine_func_f, &input);
     }
     /* Wait for all the coroutines to end. */
     struct coro *c;
     int it = 0;
     while ((c = coro_sched_wait()) != NULL) {
-        printf("Coro #%d: time: %lf sec, switch count: %lld, ", it, ((double) arrays[it].work_time) / 1000000000,
+        printf("Coro #%d: time: %lf sec, switch count: %lld, ", it, ((double) *coro_work_time(c)) / 1000000000,
                coro_switch_count(c));
         printf("finished with status %d\n", coro_status(c));
         coro_delete(c);
@@ -142,26 +161,23 @@ main(int argc, char **argv) {
     /* All coroutines have finished. */
     /* IMPLEMENT MERGING OF THE SORTED ARRAYS HERE. */
     int *result = (int *) malloc(overallSize * sizeof(int));
-    struct VectorInt buffer;
-    buffer.size_ = buffer.capacity_ = 0;
-    buffer.storage_ = NULL;
+    int *buffer = (int *) malloc(overallSize * sizeof(int));
     int agg = 0;
     for (int i = 0; i < number_of_files; i++) {
         for (int i1 = 0, i2 = 0; i1 < agg || i2 < arrays[i].size_;) {
             if (i1 == agg) {
-                push_back(&buffer, arrays[i].storage_[i2]);
+                buffer[i1 + i2] = arrays[i].storage_[i2];
                 i2++;
             } else if (i2 == arrays[i].size_ || result[i1] < arrays[i].storage_[i2]) {
-                push_back(&buffer, result[i1]);
+                buffer[i1 + i2] = result[i1];
                 i1++;
             } else {
-                push_back(&buffer, arrays[i].storage_[i2]);
+                buffer[i1 + i2] = arrays[i].storage_[i2];
                 i2++;
             }
         }
         agg += arrays[i].size_;
-        memcpy(result, buffer.storage_, (buffer.size_) * sizeof(int));
-        buffer.size_ = 0;
+        memcpy(result, buffer, agg * sizeof(int));
     }
     int check = 1;
     for (int i = 1; i < overallSize; i++) {
@@ -176,11 +192,11 @@ main(int argc, char **argv) {
         free(arrays[i].storage_);
     }
     free(arrays);
-    free(buffer.storage_);
+    free(buffer);
     free(result);
     struct timespec endTime;
     clock_gettime(CLOCK_MONOTONIC, &endTime);
-    printf("Overall time: %f\n", ((float) (1000000000 + endTime.tv_nsec - startTime.tv_nsec)) / 1000000000.f +
-                               (float) (endTime.tv_sec - startTime.tv_sec));
+    printf("Overall time: %f\n", ((1000000000 + endTime.tv_nsec - startTime.tv_nsec) % 1000000000) / 1000000000.f +
+                                 (float) (endTime.tv_sec - startTime.tv_sec));
     return 0;
 }
