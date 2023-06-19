@@ -5,18 +5,7 @@
 #include <stdatomic.h>
 #include "libcoro.h"
 #include "vector.h"
-/**
- * You can compile and run this code using the commands:
- *
- * $> gcc solution.c libcoro.c
- * $> ./a.out
- */
 
-/**
- * A function, called from inside of coroutines recursively. Just to demonstrate
- * the example. You can split your code into multiple functions, that usually
- * helps to keep the individual code blocks simple.
- */
 inline static void
 merge(int *dst, const int *first, const int size_first, const int *second, const int size_second, float target_lat,
       int64_t *work_time, struct timespec *last_mt) {
@@ -59,7 +48,6 @@ insert_sort(int *array, int size) {
     }
 }
 
-
 static void
 sort(int *array, int size, float target_lat, int64_t *work_time, struct timespec *last_mt) {
     if (size <= 1)
@@ -76,27 +64,23 @@ sort(int *array, int size, float target_lat, int64_t *work_time, struct timespec
 }
 
 struct coro_input {
-    struct VectorInt** arrays;
-    atomic_int* iterator;
+    struct VectorInt **arrays;
+    atomic_int *iterator;
     int arrays_num;
+    float target_lat;
 };
 
-/**
- * Coroutine body. This code is executed by all the coroutines. Here you
- * implement your solution, sort each individual file.
- */
 static int
 coroutine_func_f(void *context) {
     struct coro *this = coro_this();
+    *coro_work_time(this) = 0;
     clock_gettime(CLOCK_MONOTONIC, coro_last_mt(this));
-    struct coro_input* input = (struct coro_input*)context;
+    struct coro_input *input = (struct coro_input *) context;
     int it = atomic_fetch_add_explicit(input->iterator, 1, memory_order_relaxed);
-    struct VectorInt* arrays = *input->arrays;
+    struct VectorInt *arrays = *input->arrays;
+    *coro_target_lat(this) = input->target_lat;
     while (it < input->arrays_num) {
-        printf("%d\n", it);
         struct VectorInt *vector = &arrays[it];
-        *coro_target_lat(this) = vector->storage_[vector->size_ - 2] / vector->storage_[vector->size_ - 1];
-        vector->size_ -= 2;
         sort(vector->storage_, vector->size_, *coro_target_lat(this), coro_work_time(this), coro_last_mt(this));
         it = atomic_fetch_add_explicit(input->iterator, 1, memory_order_relaxed);
     }
@@ -112,7 +96,7 @@ main(int argc, char **argv) {
     struct timespec startTime;
     clock_gettime(CLOCK_MONOTONIC, &startTime);
 
-    int number_of_files = argc - 3; // -3 TODO bonus
+    int number_of_files = argc - 3;
     int target_latency = strtol(argv[1], NULL, 10);
     int number_of_coroutines = strtol(argv[2], NULL, 10);
 
@@ -126,13 +110,9 @@ main(int argc, char **argv) {
     input.arrays_num = number_of_files;
     atomic_int _it = 0;
     input.iterator = &_it;
+    input.target_lat = (float) target_latency / (float) number_of_coroutines;
     for (int i = 0; i < number_of_files; ++i) {
-        /*
-         * The coroutines can take any 'void *' interpretation of which
-         * depends on what you want. Here as an example I give them
-         * some names.
-         */
-        char *name = argv[i + 3]; // TODO: bonus will shift this index
+        char *name = argv[i + 3];
         FILE *file = fopen(name, "r");
         while (1) {
             int elem;
@@ -143,12 +123,6 @@ main(int argc, char **argv) {
         }
         fclose(file);
         overallSize += arrays[i].size_;
-        /*
-         * I have to copy the name. Otherwise all the coroutines would
-         * have the same name when they finally start.
-         */
-        push_back(&arrays[i], target_latency);
-        push_back(&arrays[i], number_of_coroutines);
     }
     for (int i = 0; i < number_of_coroutines; i++) {
         coro_new(coroutine_func_f, &input);
@@ -184,6 +158,7 @@ main(int argc, char **argv) {
         agg += arrays[i].size_;
         memcpy(result, buffer, agg * sizeof(int));
     }
+    // Checking sort result
     int check = 1;
     for (int i = 1; i < overallSize; i++) {
         check &= result[i - 1] <= result[i];
@@ -201,7 +176,8 @@ main(int argc, char **argv) {
     free(result);
     struct timespec endTime;
     clock_gettime(CLOCK_MONOTONIC, &endTime);
-    printf("Overall time: %f\n", ((1000000000 + endTime.tv_nsec - startTime.tv_nsec) % 1000000000) / 1000000000.f +
-                                 (float) (endTime.tv_sec - startTime.tv_sec));
+    printf("Overall time: %f\n",
+           (float) ((1000000000 + endTime.tv_nsec - startTime.tv_nsec) % 1000000000) / 1000000000.f +
+           (float) (endTime.tv_sec - startTime.tv_sec));
     return 0;
 }
