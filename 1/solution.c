@@ -84,8 +84,7 @@ coroutine_func_f(void *context) {
     }
     struct timespec mt;
     clock_gettime(CLOCK_MONOTONIC, &mt);
-    *coro_work_time(this) += (1000000000LL + mt.tv_nsec - coro_last_mt(this)->tv_nsec) % 1000000000LL +
-                             1000000000LL * (mt.tv_sec - coro_last_mt(this)->tv_sec);
+    *coro_work_time(this) += mt.tv_nsec - coro_last_mt(this)->tv_nsec;
     return 0;
 }
 
@@ -174,8 +173,6 @@ main(int argc, char **argv) {
     free(result);
     struct timespec endTime;
     clock_gettime(CLOCK_MONOTONIC, &endTime);
-    printf("Overall time: %f\n",
-           (float) ((1000000000 + endTime.tv_nsec - startTime.tv_nsec) % 1000000000) / 1000000000.f +
-           (float) (endTime.tv_sec - startTime.tv_sec));
+    printf("Overall time: %f\n", (float) (endTime.tv_nsec - startTime.tv_nsec) / 1000000000.f);
     return 0;
 }
