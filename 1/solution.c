@@ -22,8 +22,7 @@ merge(int *dst, const int *first, const int size_first, const int *second, const
         }
         struct timespec mt;
         clock_gettime(CLOCK_MONOTONIC, &mt);
-        int64_t time = (1000000000LL + mt.tv_nsec - last_mt->tv_nsec) % 1000000000LL +
-                       1000000000LL * (mt.tv_sec - last_mt->tv_sec);
+        int64_t time = (mt.tv_nsec - last_mt->tv_nsec) + 1000000000LL * (mt.tv_sec - last_mt->tv_sec);
         if ((float) time / 1000.f > target_lat) { // +5 баллов: каждая из N корутин получает T / N микросекунд
             *work_time += time;
             coro_yield(); // 15 баллов: yield после каждой итерации циклов сортировки индивидуальных файлов.
@@ -84,7 +83,8 @@ coroutine_func_f(void *context) {
     }
     struct timespec mt;
     clock_gettime(CLOCK_MONOTONIC, &mt);
-    *coro_work_time(this) += mt.tv_nsec - coro_last_mt(this)->tv_nsec;
+    *coro_work_time(this) +=
+            mt.tv_nsec - coro_last_mt(this)->tv_nsec + (mt.tv_sec - coro_last_mt(this)->tv_sec) * 1000000000LL;
     return 0;
 }
 
@@ -173,6 +173,7 @@ main(int argc, char **argv) {
     free(result);
     struct timespec endTime;
     clock_gettime(CLOCK_MONOTONIC, &endTime);
-    printf("Overall time: %f\n", (float) (endTime.tv_nsec - startTime.tv_nsec) / 1000000000.f);
+    printf("Overall time: %f\n",
+           (float) (endTime.tv_nsec - startTime.tv_nsec) / 1000000000.f + (float) (endTime.tv_sec - startTime.tv_sec));
     return 0;
 }
