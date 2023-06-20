@@ -53,9 +53,5 @@ coro_relaunch(struct coro *c, void *func_arg);
 int64_t*
 coro_work_time(struct coro*);
 
-float *
-coro_target_lat(struct coro *c);
-
-
 struct timespec *
 coro_last_mt(struct coro *c);

@@ -29,7 +29,6 @@ struct coro {
     struct coro *next, *prev;
 
     int64_t work_time;
-    float tar_lat;
     struct timespec last_mt;
 };
 
@@ -252,11 +251,6 @@ coro_new(coro_f func, void *func_arg) {
 int64_t *
 coro_work_time(struct coro *c) {
     return &c->work_time;
-}
-
-float *
-coro_target_lat(struct coro *c) {
-    return &c->tar_lat;
 }
 
 struct timespec *

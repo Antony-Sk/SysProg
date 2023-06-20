@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <stdatomic.h>
 #include "libcoro.h"
 #include "vector.h"
 
@@ -65,7 +64,7 @@ sort(int *array, int size, float target_lat, int64_t *work_time, struct timespec
 
 struct coro_input {
     struct VectorInt **arrays;
-    atomic_int *iterator;
+    int *iterator;
     int arrays_num;
     float target_lat;
 };
@@ -76,13 +75,12 @@ coroutine_func_f(void *context) {
     *coro_work_time(this) = 0;
     clock_gettime(CLOCK_MONOTONIC, coro_last_mt(this));
     struct coro_input *input = (struct coro_input *) context;
-    int it = atomic_fetch_add_explicit(input->iterator, 1, memory_order_relaxed);
+    int it = (*input->iterator)++;
     struct VectorInt *arrays = *input->arrays;
-    *coro_target_lat(this) = input->target_lat;
     while (it < input->arrays_num) {
         struct VectorInt *vector = &arrays[it];
-        sort(vector->storage_, vector->size_, *coro_target_lat(this), coro_work_time(this), coro_last_mt(this));
-        it = atomic_fetch_add_explicit(input->iterator, 1, memory_order_relaxed);
+        sort(vector->storage_, vector->size_, input->target_lat, coro_work_time(this), coro_last_mt(this));
+        it = (*input->iterator)++;
     }
     struct timespec mt;
     clock_gettime(CLOCK_MONOTONIC, &mt);
@@ -108,7 +106,7 @@ main(int argc, char **argv) {
     struct coro_input input;
     input.arrays = &arrays;
     input.arrays_num = number_of_files;
-    atomic_int _it = 0;
+    int _it = 0;
     input.iterator = &_it;
     input.target_lat = (float) target_latency / (float) number_of_coroutines;
     for (int i = 0; i < number_of_files; ++i) {
