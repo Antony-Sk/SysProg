@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <stdatomic.h>
 #include "libcoro.h"
 #include "vector.h"
 
@@ -23,8 +22,7 @@ merge(int *dst, const int *first, const int size_first, const int *second, const
         }
         struct timespec mt;
         clock_gettime(CLOCK_MONOTONIC, &mt);
-        int64_t time = (1000000000LL + mt.tv_nsec - last_mt->tv_nsec) % 1000000000LL +
-                       1000000000LL * (mt.tv_sec - last_mt->tv_sec);
+        int64_t time = (mt.tv_nsec - last_mt->tv_nsec) + 1000000000LL * (mt.tv_sec - last_mt->tv_sec);
         if ((float) time / 1000.f > target_lat) { // +5 баллов: каждая из N корутин получает T / N микросекунд
             *work_time += time;
             coro_yield(); // 15 баллов: yield после каждой итерации циклов сортировки индивидуальных файлов.
@@ -65,7 +63,7 @@ sort(int *array, int size, float target_lat, int64_t *work_time, struct timespec
 
 struct coro_input {
     struct VectorInt **arrays;
-    atomic_int *iterator;
+    int *iterator;
     int arrays_num;
     float target_lat;
 };
@@ -76,18 +74,17 @@ coroutine_func_f(void *context) {
     *coro_work_time(this) = 0;
     clock_gettime(CLOCK_MONOTONIC, coro_last_mt(this));
     struct coro_input *input = (struct coro_input *) context;
-    int it = atomic_fetch_add_explicit(input->iterator, 1, memory_order_relaxed);
+    int it = (*input->iterator)++;
     struct VectorInt *arrays = *input->arrays;
-    *coro_target_lat(this) = input->target_lat;
     while (it < input->arrays_num) {
         struct VectorInt *vector = &arrays[it];
-        sort(vector->storage_, vector->size_, *coro_target_lat(this), coro_work_time(this), coro_last_mt(this));
-        it = atomic_fetch_add_explicit(input->iterator, 1, memory_order_relaxed);
+        sort(vector->storage_, vector->size_, input->target_lat, coro_work_time(this), coro_last_mt(this));
+        it = (*input->iterator)++;
     }
     struct timespec mt;
     clock_gettime(CLOCK_MONOTONIC, &mt);
-    *coro_work_time(this) += (1000000000LL + mt.tv_nsec - coro_last_mt(this)->tv_nsec) % 1000000000LL +
-                             1000000000LL * (mt.tv_sec - coro_last_mt(this)->tv_sec);
+    *coro_work_time(this) +=
+            mt.tv_nsec - coro_last_mt(this)->tv_nsec + (mt.tv_sec - coro_last_mt(this)->tv_sec) * 1000000000LL;
     return 0;
 }
 
@@ -108,7 +105,7 @@ main(int argc, char **argv) {
     struct coro_input input;
     input.arrays = &arrays;
     input.arrays_num = number_of_files;
-    atomic_int _it = 0;
+    int _it = 0;
     input.iterator = &_it;
     input.target_lat = (float) target_latency / (float) number_of_coroutines;
     for (int i = 0; i < number_of_files; ++i) {
@@ -177,7 +174,6 @@ main(int argc, char **argv) {
     struct timespec endTime;
     clock_gettime(CLOCK_MONOTONIC, &endTime);
     printf("Overall time: %f\n",
-           (float) ((1000000000 + endTime.tv_nsec - startTime.tv_nsec) % 1000000000) / 1000000000.f +
-           (float) (endTime.tv_sec - startTime.tv_sec));
+           (float) (endTime.tv_nsec - startTime.tv_nsec) / 1000000000.f + (float) (endTime.tv_sec - startTime.tv_sec));
     return 0;
 }
