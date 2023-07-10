@@ -113,7 +113,7 @@ ufs_open(const char *filename, int flags) {
     if (flags == UFS_CREATE) {
         struct file *fs = find_file(filename);
         if (fs != NULL) {
-            int fd = create_filedesc(fs, flags);
+            int fd = create_filedesc(fs, UFS_READ_WRITE);
             ufs_error_code = UFS_ERR_NO_ERR;
             return fd;
         }
@@ -135,21 +135,21 @@ ufs_open(const char *filename, int flags) {
         new_file->block_list->memory = NULL;
         new_file->block_list->next = new_file->block_list->prev = NULL;
         new_file->block_list->occupied = 0;
-        int fd = create_filedesc(new_file, flags);
-        ufs_error_code = UFS_ERR_NO_ERR;
-        return fd;
-    } else if (flags == 0) { // todo bonus
-        struct file *fs = find_file(filename);
-        if (fs == NULL) {
-            ufs_error_code = UFS_ERR_NO_FILE;
-            return -1;
-        }
-        int fd = create_filedesc(fs, flags);
+        int fd = create_filedesc(new_file, UFS_READ_WRITE);
         ufs_error_code = UFS_ERR_NO_ERR;
         return fd;
     }
-    ufs_error_code = UFS_ERR_NOT_IMPLEMENTED;
-    return -1;
+    if (flags == 0) {
+        flags = UFS_READ_WRITE;
+    }
+    struct file *fs = find_file(filename);
+    if (fs == NULL) {
+        ufs_error_code = UFS_ERR_NO_FILE;
+        return -1;
+    }
+    int fd = create_filedesc(fs, flags);
+    ufs_error_code = UFS_ERR_NO_ERR;
+    return fd;
 }
 
 ssize_t
@@ -159,7 +159,10 @@ ufs_write(int fd, const char *buf, size_t size) {
         return -1;
     }
     struct filedesc *f = file_descriptors[fd];
-//    if (f->flags ) // todo bonus
+    if (f->flags != UFS_READ_WRITE && f->flags != UFS_WRITE_ONLY) {
+        ufs_error_code = UFS_ERR_NO_PERMISSION;
+        return -1;
+    }
     size_t written = 0;
     struct block *block = f->block;
 
@@ -208,7 +211,10 @@ ufs_read(int fd, char *buf, size_t size) {
         return -1;
     }
     struct filedesc *f = file_descriptors[fd];
-
+    if (f->flags != UFS_READ_WRITE && f->flags != UFS_READ_ONLY) {
+        ufs_error_code = UFS_ERR_NO_PERMISSION;
+        return -1;
+    }
     size_t read = 0;
     while (read != size) {
         size_t cnt = (f->block->occupied - f->offset);
