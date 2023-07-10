@@ -318,3 +318,65 @@ ufs_destroy(void) {
     }
     free(file_descriptors);
 }
+
+int
+ufs_resize(int fd, size_t new_size) {
+    if (fd < 0 || fd >= file_descriptor_capacity || file_descriptors[fd] == NULL) {
+        ufs_error_code = UFS_ERR_NO_FILE;
+        return -1;
+    }
+    struct filedesc *f = file_descriptors[fd];
+    if (f->file->size < new_size) {
+        while (f->file->size != new_size) {
+            size_t cnt = BLOCK_SIZE - f->file->last_block->occupied;
+            if (cnt > (new_size - f->file->size))
+                cnt = new_size - f->file->size;
+            if (f->file->size + cnt > MAX_FILE_SIZE) {
+                ufs_error_code = MAX_FILE_SIZE;
+                return -1;
+            }
+            if (f->file->last_block->memory == NULL) {
+                f->file->last_block->memory = (char *) malloc(sizeof(char) * BLOCK_SIZE);
+            }
+            f->file->last_block->occupied += cnt;
+            if (f->file->last_block->occupied == BLOCK_SIZE) {
+                if (f->file->last_block->next == NULL) {
+                    f->file->last_block->next = (struct block *) malloc(sizeof(struct block));
+                    f->file->last_block->next->prev = f->file->last_block;
+                    f->file->last_block->next->next = NULL;
+                    f->file->last_block->next->occupied = 0;
+                    f->file->last_block->next->memory = NULL;
+                }
+                f->file->last_block = f->file->last_block->next;
+            }
+        }
+        f->file->size = new_size;
+    } else if (f->file->size > new_size) {
+        struct block *block = f->file->block_list;
+        for (size_t i = 0; i < new_size / BLOCK_SIZE; i++) {
+            block = block->next;
+        }
+        destroy_blocks(block->next);
+        block->next = NULL;
+        f->file->size = new_size;
+        block->occupied = new_size % BLOCK_SIZE;
+        for (int i = 0; i < file_descriptor_capacity; i++) {
+            if (file_descriptors[i] != NULL && file_descriptors[i]->file == f->file) {
+                size_t offset = 0;
+                struct block *b = file_descriptors[i]->block;
+                while (offset < new_size) {
+                    if (block == b) {
+                        file_descriptors[i]->block = block;
+                        if ((size_t) file_descriptors[i]->offset > new_size % BLOCK_SIZE)
+                            file_descriptors[i]->offset = new_size % BLOCK_SIZE;
+                        break;
+                    }
+                    offset += BLOCK_SIZE;
+                    b = b->next;
+                }
+            }
+        }
+    }
+    ufs_error_code = UFS_ERR_NO_ERR;
+    return 0;
+}
