@@ -1,6 +1,7 @@
 20 points now
 <details>
 <summary>stdout.txt</summary>
+        
 ```text
         -------- main started --------
         -------- test_open started --------
