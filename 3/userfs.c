@@ -1,7 +1,6 @@
 #include "userfs.h"
 #include <stddef.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
 enum {
@@ -76,7 +75,8 @@ create_filedesc(struct file *file, int flags) {
         file_descriptor_capacity = (file_descriptor_capacity << 1) + 1;
         struct filedesc **new_list = (struct filedesc **) malloc(sizeof(struct filedesc *) * file_descriptor_capacity);
         memcpy(new_list, file_descriptors, sizeof(struct filedesc *) * (file_descriptor_capacity / 2));
-        free(file_descriptors);
+        if (file_descriptors != NULL)
+            free(file_descriptors);
         file_descriptors = new_list;
     }
     file->refs++;
@@ -119,7 +119,7 @@ ufs_open(const char *filename, int flags) {
         }
         struct file *new_file = (struct file *) malloc(sizeof(struct file));
         new_file->name = (char *) malloc(strlen(filename) + 1);
-        new_file->refs = new_file->size = new_file->is_deleted = 0;
+        new_file->size = new_file->refs = new_file->is_deleted = 0;
         new_file->next = new_file->prev = NULL;
         strcpy(new_file->name, filename);
         if (file_list == NULL) {
@@ -131,7 +131,10 @@ ufs_open(const char *filename, int flags) {
             fs->next = new_file;
             fs->next->prev = fs;
         }
-        new_file->block_list = (struct block *) malloc(sizeof(struct block));
+        new_file->block_list = new_file->last_block = (struct block *) malloc(sizeof(struct block));
+        new_file->block_list->memory = NULL;
+        new_file->block_list->next = new_file->block_list->prev = NULL;
+        new_file->block_list->occupied = 0;
         int fd = create_filedesc(new_file, flags);
         ufs_error_code = UFS_ERR_NO_ERR;
         return fd;
@@ -170,7 +173,7 @@ ufs_write(int fd, const char *buf, size_t size) {
             return -1;
         }
         if (cnt > 0 && block->occupied == 0) {
-            block->memory = (char*) malloc(sizeof(char) * BLOCK_SIZE);
+            block->memory = (char *) malloc(sizeof(char) * BLOCK_SIZE);
         }
         memcpy(block->memory + f->offset, buf + written, cnt);
         f->offset += cnt;
@@ -182,6 +185,9 @@ ufs_write(int fd, const char *buf, size_t size) {
             if (block->next == NULL) {
                 block->next = (struct block *) malloc(sizeof(struct block));
                 block->next->prev = block;
+                block->next->next = NULL;
+                block->next->occupied = 0;
+                block->next->memory = NULL;
                 f->file->last_block = block->next;
             }
             f->offset = 0;
@@ -224,6 +230,18 @@ ufs_read(int fd, char *buf, size_t size) {
     return read;
 }
 
+void
+destroy_blocks(struct block *list) {
+    while (list != NULL) {
+        struct block *n = list->next;
+        if (list->memory != NULL)
+            free(list->memory);
+        if (list != NULL)
+            free(list);
+        list = n;
+    }
+}
+
 int
 ufs_close(int fd) {
     /* IMPLEMENT THIS FUNCTION */
@@ -232,20 +250,17 @@ ufs_close(int fd) {
         return -1;
     }
     file_descriptors[fd]->file->refs--;
+
+    if (file_descriptors[fd]->file->refs == 0 && file_descriptors[fd]->file->is_deleted) {
+        free(file_descriptors[fd]->file->name);
+        destroy_blocks(file_descriptors[fd]->file->block_list);
+        free(file_descriptors[fd]->file);
+    }
     free(file_descriptors[fd]);
     file_descriptors[fd] = NULL;
     file_descriptor_count--;
     ufs_error_code = UFS_ERR_NO_ERR;
     return 0;
-}
-
-void destroy_blocks(struct block *list) {
-    while (list != NULL) {
-        struct block *n = list->next;
-        free(list->memory);
-        free(list);
-        list = n;
-    }
 }
 
 int
@@ -274,6 +289,7 @@ ufs_delete(const char *filename) {
         file->is_deleted = 1;
     } else {
         destroy_blocks(file->block_list);
+        free(file->name);
         free(file);
     }
     ufs_error_code = UFS_ERR_NO_ERR;
@@ -286,6 +302,7 @@ ufs_destroy(void) {
     while (file != NULL) {
         struct file *n = file->next;
         destroy_blocks(file->block_list);
+        free(file->name);
         free(file);
         file = n;
     }
