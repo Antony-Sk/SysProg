@@ -117,9 +117,9 @@ ok - descriptor was affected by resize and still works
 Но так как количество аллокаций равно количеству освобождений, то думаю что утечек нет. За не имением лучшего прикладываю valgrind:
 
 ```text
-==239812== HEAP SUMMARY:
-==239812==     in use at exit: 0 bytes in 0 blocks
-==239812==   total heap usage: 415,677 allocs, 415,677 frees, 114,211,105 bytes allocated
-==239812== 
-==239812== All heap blocks were freed -- no leaks are possible
+==13010== HEAP SUMMARY:
+==13010==     in use at exit: 0 bytes in 0 blocks
+==13010==   total heap usage: 415,715 allocs, 415,715 frees, 114,218,545 bytes allocated
+==13010== 
+==13010== All heap blocks were freed -- no leaks are possible
 ```
