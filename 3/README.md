@@ -1,4 +1,4 @@
-20 points now
+25 points now
 <details>
 <summary>stdout.txt</summary>
         
@@ -103,6 +103,11 @@ ok - write again but less
 ok - data still here
 ok - data is ok
         -------- test_rights done --------
+        -------- test_resize started --------
+ok - shrink to smaller size
+ok - opened descriptor beyond new border still works
+ok - descriptor was affected by resize and still works
+        -------- test_resize done --------
         -------- main done --------
 ```
 </details>

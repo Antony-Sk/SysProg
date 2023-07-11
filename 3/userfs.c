@@ -332,7 +332,7 @@ ufs_resize(int fd, size_t new_size) {
             if (cnt > (new_size - f->file->size))
                 cnt = new_size - f->file->size;
             if (f->file->size + cnt > MAX_FILE_SIZE) {
-                ufs_error_code = MAX_FILE_SIZE;
+                ufs_error_code = UFS_ERR_NO_MEM;
                 return -1;
             }
             if (f->file->last_block->memory == NULL) {
@@ -373,6 +373,10 @@ ufs_resize(int fd, size_t new_size) {
                     }
                     offset += BLOCK_SIZE;
                     b = b->next;
+                }
+                if (offset >= new_size) {
+                    file_descriptors[i]->block = block;
+                    file_descriptors[i]->offset = new_size % BLOCK_SIZE;
                 }
             }
         }
