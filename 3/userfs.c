@@ -258,6 +258,9 @@ ufs_close(int fd) {
     file_descriptors[fd]->file->refs--;
 
     if (file_descriptors[fd]->file->refs == 0 && file_descriptors[fd]->file->is_deleted) {
+        if (file_descriptors[fd]->file == file_list) {
+            file_list = file_descriptors[fd]->file->next; // first file is head of the list
+        }
         free(file_descriptors[fd]->file->name);
         destroy_blocks(file_descriptors[fd]->file->block_list);
         free(file_descriptors[fd]->file);
@@ -285,7 +288,8 @@ ufs_delete(const char *filename) {
     }
     if (file->prev != NULL) {
         file->prev->next = file->next;
-    } else {
+    }
+    if (file == file_list) {
         file_list = file->next; // first file is head of the list
     }
     if (file->next != NULL) {
