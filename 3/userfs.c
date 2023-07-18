@@ -78,6 +78,8 @@ create_filedesc(struct file *file, int flags) {
         if (file_descriptors != NULL)
             free(file_descriptors);
         file_descriptors = new_list;
+        for (int i = file_descriptor_capacity / 2; i < file_descriptor_capacity; i++)
+            file_descriptors[i] = NULL;
     }
     file->refs++;
     struct filedesc *fd = (struct filedesc *) malloc(sizeof(struct filedesc));
