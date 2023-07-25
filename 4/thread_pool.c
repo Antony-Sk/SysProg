@@ -222,6 +222,7 @@ thread_task_detach(struct thread_task *task)
     pthread_mutex_lock(&task->mutex);
     if (thread_task_is_finished(task)) {
         pthread_mutex_unlock(&task->mutex);
+        task->pool = NULL;
         thread_task_delete(task);
         return 0;
     }
